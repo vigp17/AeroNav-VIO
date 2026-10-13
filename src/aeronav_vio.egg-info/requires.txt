@@ -1,0 +1,9 @@
+numpy
+opencv-python
+matplotlib
+pandas
+PyYAML
+
+[dev]
+pytest
+ruff
