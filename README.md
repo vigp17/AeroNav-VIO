@@ -28,7 +28,7 @@ Milestone 1 provides a validated EuRoC sequence loader that:
 - Reports unmatched camera timestamps
 - Loads requested images on demand
 - Returns images as grayscale NumPy arrays
-- Avoids loading the full dataset into memory
+- Avoids loading the complete dataset into memory
 - Validates malformed, missing, duplicate, and unreadable data
 - Includes automated tests and a real-dataset inspection script
 
@@ -41,7 +41,7 @@ The main interfaces are:
 ### Completed Milestone 2: ORB temporal feature matching
 
 Milestone 2 provides an ORB-based temporal feature-matching pipeline for
-consecutive EuRoC `cam0` images.
+EuRoC `cam0` images.
 
 The implementation:
 
@@ -55,20 +55,37 @@ The implementation:
 - Includes synthetic unit and script-level tests
 - Runs successfully on real EuRoC `MH_01_easy` images
 
-### Current Milestone 3: Relative camera pose estimation
+### Completed Milestone 3: Calibrated relative camera pose estimation
 
-Milestone 3 will:
+Milestone 3 builds calibrated two-view relative pose estimation on top of
+Milestone 1 and Milestone 2.
 
-- Load EuRoC camera calibration from `sensor.yaml`
-- Validate camera intrinsics and distortion parameters
-- Undistort matched feature coordinates
-- Estimate the essential matrix
-- Recover relative camera rotation
-- Recover relative translation direction
-- Evaluate relative pose on selected frame pairs
+The implementation:
 
-Milestone 3 will not initially accumulate a complete trajectory or estimate
-metric scale.
+- Loads and validates EuRoC `mav0/cam0/sensor.yaml` in read-only mode
+- Constructs the pinhole camera intrinsic matrix
+- Parses radial-tangential distortion coefficients
+- Validates image resolution against the calibration
+- Extracts only Milestone 2 geometric-inlier correspondences
+- Undistorts matched pixel coordinates into normalized coordinates
+- Estimates essential-matrix candidates with RANSAC
+- Handles stacked essential-matrix candidates deterministically
+- Recovers relative camera rotation and unit translation direction
+- Applies a positive-depth cheirality check
+- Validates rotation orthonormality and determinant
+- Evaluates pose quality using configurable cheirality thresholds
+- Rejects or flags unsupported relative-pose estimates
+- Writes standards-compliant JSON reports under `outputs/`
+
+Milestone 3 does not recover metric translation scale and does not accumulate a
+multi-frame trajectory.
+
+### Current focus: Milestone 4 preparation
+
+Milestone 4 will extend the validated two-view pipeline toward quality-gated
+multi-frame visual odometry and ground-truth trajectory evaluation.
+
+Milestone 4 has not yet been implemented.
 
 ## Repository structure
 
@@ -80,23 +97,37 @@ AeroNav-VIO/
 ├── docs/
 ├── outputs/
 ├── scripts/
+│   ├── estimate_relative_pose.py
 │   ├── inspect_euroc.py
 │   └── match_euroc_frames.py
 ├── src/
 │   └── aeronav_vio/
+│       ├── calibration/
+│       │   ├── __init__.py
+│       │   └── euroc.py
 │       ├── data/
 │       │   └── euroc.py
 │       ├── evaluation/
-│       └── features/
-│           └── orb.py
+│       ├── features/
+│       │   └── orb.py
+│       └── geometry/
+│           ├── __init__.py
+│           └── relative_pose.py
 ├── tests/
+│   ├── test_estimate_relative_pose.py
+│   ├── test_euroc_calibration.py
+│   ├── test_euroc_loader.py
+│   ├── test_match_euroc_frames.py
+│   ├── test_orb_features.py
+│   └── test_relative_pose.py
 ├── .gitignore
 ├── pyproject.toml
 └── README.md
 ```
 
-Generated visualizations are written under `outputs/` and excluded from version
-control. Use the documented commands to reproduce them locally.
+Generated visualizations and JSON reports are written under `outputs/` and are
+excluded from version control. Run the documented commands to reproduce them
+locally.
 
 ## Development environment
 
@@ -113,12 +144,14 @@ Python 3.11 or newer is required by the project configuration.
 
 ## Installation
 
-From Windows PowerShell, clone the repository and enter the project directory:
+Clone the repository and enter the project directory:
 
 ```powershell
 git clone https://github.com/YOUR_USERNAME/AeroNav-VIO.git
 cd AeroNav-VIO
 ```
+
+Replace `YOUR_USERNAME` with the GitHub account that owns the repository.
 
 Create a virtual environment:
 
@@ -132,15 +165,15 @@ Activate it:
 .\.venv\Scripts\Activate.ps1
 ```
 
-If PowerShell prevents environment activation, apply a temporary policy to the
-current PowerShell process:
+If PowerShell prevents environment activation, apply a temporary execution
+policy to the current PowerShell process:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
 ```
 
-Install the package and development dependencies:
+Upgrade the packaging tools and install the project:
 
 ```powershell
 python -m pip install --upgrade pip setuptools wheel
@@ -185,7 +218,7 @@ C:\Users\<username>\Desktop\
                 └── body.yaml
 ```
 
-Commands should receive the sequence root containing `mav0`.
+Commands must receive the sequence root containing `mav0`.
 
 Correct:
 
@@ -199,12 +232,14 @@ Incorrect:
 C:\Users\<username>\Desktop\datasets\euroc\MH_01_easy\mav0
 ```
 
-The scripts treat the dataset as read-only. Generated files are saved only
-inside the repository's `outputs/` directory.
+The project treats the dataset as read-only. Generated files are saved only
+under the repository's `outputs/` directory.
 
-## Milestone 1: Inspecting a EuRoC sequence
+# Milestone 1: EuRoC sequence loading
 
-Run the sequence-inspection script:
+## Inspecting a sequence
+
+Run:
 
 ```powershell
 python scripts/inspect_euroc.py `
@@ -222,7 +257,7 @@ The script reports:
 - Left and right image resolutions
 - Left and right NumPy data types
 
-### Measured `MH_01_easy` inspection result
+## Measured `MH_01_easy` inspection result
 
 ```text
 cam0 record count: 3682
@@ -241,10 +276,9 @@ First right-image NumPy data type: uint8
 These results confirm exact timestamp synchronization between the two camera
 streams for all 3,682 frames in the sequence.
 
-## Milestone 2: ORB temporal feature matching
+# Milestone 2: ORB temporal feature matching
 
-Milestone 2 matches visual features between consecutive images from the left
-camera, `cam0`.
+Milestone 2 matches visual features between two `cam0` images.
 
 The processing pipeline is:
 
@@ -266,10 +300,10 @@ Geometric inlier matches
 Diagnostic visualization
 ```
 
-### ORB feature extraction
+## ORB feature extraction
 
-`extract_orb_features` validates that the input is a nonempty, two-dimensional,
-`uint8` grayscale NumPy array.
+`extract_orb_features` validates that the input is a nonempty,
+two-dimensional, `uint8` grayscale NumPy array.
 
 The source image is not:
 
@@ -279,7 +313,7 @@ The source image is not:
 - Converted silently
 - Mutated
 
-The current default ORB configuration is:
+The default ORB configuration is:
 
 ```text
 Maximum retained features: 1000
@@ -291,7 +325,7 @@ FAST threshold: 20
 
 ORB produces 32-byte, or 256-bit, binary descriptors.
 
-### Descriptor matching
+## Descriptor matching
 
 `match_orb_descriptors` uses:
 
@@ -305,9 +339,9 @@ KNN matching is performed with:
 k = 2
 ```
 
-Hamming distance is appropriate because ORB produces binary descriptors.
+Hamming distance is used because ORB produces binary descriptors.
 
-### Ratio-test filtering
+## Ratio-test filtering
 
 `filter_knn_matches` applies Lowe's ratio test:
 
@@ -317,15 +351,15 @@ d1 < r * d2
 
 where:
 
-- `d1` is the distance to the nearest descriptor
-- `d2` is the distance to the second-nearest descriptor
-- `r` is the ratio-test threshold
+- `d1` is the nearest descriptor distance
+- `d2` is the second-nearest descriptor distance
+- `r` is the configurable ratio threshold
 - The default ratio threshold is `0.75`
 
 Accepted matches are sorted deterministically using distance and descriptor
 indices.
 
-### Geometric verification
+## Fundamental-matrix verification
 
 `verify_matches_ransac` uses matched keypoint coordinates to estimate a
 fundamental matrix with RANSAC.
@@ -338,30 +372,28 @@ RANSAC confidence: 0.99
 Minimum correspondences: 8
 ```
 
-The RANSAC mask divides ratio-filtered matches into:
+The RANSAC mask partitions ratio-filtered matches into:
 
 - Geometric inliers
 - Geometric outliers
 
-If fewer than eight correspondences exist, or fundamental-matrix estimation
-fails, the implementation returns a valid result with no geometric inliers
-rather than crashing.
+If too few correspondences exist or estimation fails, the implementation
+returns a structured result with no geometric inliers instead of crashing.
 
-### Visualization
+## Match visualization
 
-`render_inlier_matches` creates a side-by-side image containing:
+`render_inlier_matches` creates a side-by-side result containing:
 
-- Reference `cam0` frame on the left
-- Current `cam0` frame on the right
+- Reference `cam0` frame
+- Current `cam0` frame
 - Only geometrically verified RANSAC inliers
-- Reference and current timestamps
+- Frame timestamps
 - Keypoint counts
 - Raw and ratio-filtered match counts
 - Inlier and outlier counts
 - Geometric inlier ratio
 
-The visualization helper returns a NumPy array and does not open an interactive
-window.
+The helper returns a NumPy array and does not open an interactive GUI window.
 
 ## Running temporal feature matching
 
@@ -374,7 +406,7 @@ python scripts/match_euroc_frames.py `
     --output "outputs\matches_000000.png"
 ```
 
-Additional configurable arguments include:
+Available matching arguments include:
 
 ```text
 --max-features
@@ -383,7 +415,7 @@ Additional configurable arguments include:
 --ransac-confidence
 ```
 
-Example using explicit matching parameters:
+Example with explicit parameters:
 
 ```powershell
 python scripts/match_euroc_frames.py `
@@ -396,50 +428,10 @@ python scripts/match_euroc_frames.py `
     --output "outputs\matches_000000.png"
 ```
 
-The resulting visualization combines two `752x480` EuRoC `cam0` images with a
-statistics header and geometrically verified inlier matches.
-
-## Printed matching statistics
-
-The temporal-matching script prints:
-
-- Normalized sequence path
-- Reference frame index
-- Current frame index
-- Reference timestamp in nanoseconds
-- Current timestamp in nanoseconds
-- Timestamp difference in nanoseconds
-- Reference keypoint count
-- Current keypoint count
-- Raw KNN match count
-- Ratio-filtered match count
-- Geometric inlier count
-- Geometric outlier count
-- Geometric inlier ratio
-- Output image path
-- Output image resolution
-
-The geometric inlier ratio is calculated as:
-
-```text
-geometric inlier count / ratio-filtered match count
-```
-
-If no ratio-filtered matches exist, the ratio is reported safely as zero.
-
 ## Measured Milestone 2 results
 
 The following results were measured using real consecutive `cam0` images from
 EuRoC `MH_01_easy`.
-
-Default parameters:
-
-```text
-Maximum features: 1000
-Ratio threshold: 0.75
-RANSAC threshold: 1.0 pixel
-RANSAC confidence: 0.99
-```
 
 | Frame pair | Ref KPs | Cur KPs | Raw KNN | Ratio-filtered | RANSAC inliers | RANSAC outliers | Inlier ratio |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -447,7 +439,7 @@ RANSAC confidence: 0.99
 | `100 → 101` | 1000 | 1000 | 1000 | 660 | 442 | 218 | 0.6697 |
 | `1000 → 1001` | 1000 | 1000 | 1000 | 662 | 486 | 176 | 0.7341 |
 
-Detailed timing and output information:
+Timing and output information:
 
 | Frame pair | Reference timestamp (ns) | Current timestamp (ns) | Interval (ns) | Output |
 |---|---:|---:|---:|---|
@@ -455,26 +447,22 @@ Detailed timing and output information:
 | `100 → 101` | 1403636584763555584 | 1403636584813555456 | 49999872 | `outputs\matches_000100.png` |
 | `1000 → 1001` | 1403636629763555584 | 1403636629813555456 | 49999872 | `outputs\matches_001000.png` |
 
-Across the three evaluated frame pairs:
+Across the three evaluated pairs:
 
-- The observed interval was `49,999,872` ns, approximately 50 ms and
-  consistent with a 20 Hz camera stream.
-- ORB reached the configured limit of 1,000 retained keypoints in each
-  evaluated image.
+- The interval was `49,999,872` ns, approximately 50 ms and consistent with a
+  20 Hz stream.
+- ORB reached the configured limit of 1,000 retained keypoints in each image.
 - Lowe's ratio test retained between 660 and 704 matches.
-- Fundamental-matrix RANSAC verified between 442 and 499 geometric inliers.
+- Fundamental-matrix RANSAC retained between 442 and 499 geometric inliers.
 - The geometric inlier ratio ranged from 66.97% to 73.41%.
 
-Reaching the 1,000-feature limit does not necessarily mean exactly 1,000
-candidate corners were initially detected. It means ORB retained up to the
-configured maximum after internal feature selection.
+Reaching the 1,000-feature limit means ORB retained the configured maximum. It
+does not necessarily mean exactly 1,000 candidate corners were initially
+detected.
 
-These three frame pairs are diagnostic samples, not a complete sequence
-benchmark. A broader evaluation should report matching and inlier
-distributions across the complete sequence, including low-texture, blurred,
-repetitive, and high-motion segments.
+These frame pairs are diagnostic samples, not a complete sequence benchmark.
 
-## Reproducing all measured visualizations
+## Reproducing the visualizations
 
 ```powershell
 python scripts/match_euroc_frames.py `
@@ -499,12 +487,508 @@ Open a generated visualization in Windows:
 Start-Process "outputs\matches_000000.png"
 ```
 
-Generated visualizations are intentionally excluded from version control.
-Running the commands above reproduces them locally.
+# Milestone 3: Calibrated relative camera pose
 
-## Testing and code quality
+Milestone 3 estimates calibrated two-view relative camera pose between selected
+`cam0` frames using Milestone 2 geometric inliers.
 
-Run the complete automated test suite:
+## Calibration file
+
+Calibration is loaded in read-only mode from:
+
+```text
+<sequence_root>/mav0/cam0/sensor.yaml
+```
+
+`load_cam0_calibration` parses and validates:
+
+- `sensor_type`
+- Optional sensor comment or label
+- `camera_model`
+- `distortion_model`
+- `resolution`
+- `rate_hz`
+- `intrinsics`
+- `distortion_coefficients`
+- `T_BS`
+
+The current implementation supports:
+
+```text
+Camera model: pinhole
+Distortion model: radial-tangential
+```
+
+Calibration values are preserved using double-precision floating-point
+representation.
+
+## Camera intrinsic matrix
+
+EuRoC intrinsics are interpreted as:
+
+```text
+[fx, fy, cx, cy]
+```
+
+The intrinsic matrix is:
+
+```text
+K = [[fx,  0, cx],
+     [ 0, fy, cy],
+     [ 0,  0,  1]]
+```
+
+Distortion coefficients use the order:
+
+```text
+[k1, k2, p1, p2]
+```
+
+where:
+
+- `k1` and `k2` are radial-distortion coefficients
+- `p1` and `p2` are tangential-distortion coefficients
+
+## Parsed EuRoC `cam0` calibration
+
+The real `MH_01_easy` values are:
+
+```text
+Camera model: pinhole
+Distortion model: radial-tangential
+Resolution: 752x480
+Rate: 20.0 Hz
+
+fx: 458.654
+fy: 457.296
+cx: 367.215
+cy: 248.375
+
+Distortion coefficients:
+[-0.28340811, 0.07395907, 0.00019359, 1.76187114e-05]
+```
+
+The corresponding camera matrix is:
+
+```text
+[[458.654,   0.000, 367.215],
+ [  0.000, 457.296, 248.375],
+ [  0.000,   0.000,   1.000]]
+```
+
+## Point-undistortion convention
+
+`extract_inlier_correspondences` obtains only the Milestone 2
+fundamental-matrix RANSAC inliers.
+
+The correspondence arrays use:
+
+```text
+Shape: (N, 2)
+Coordinate order: (u, v)
+Data type: float64
+```
+
+`undistort_matched_points` applies `cv2.undistortPoints` using the parsed
+intrinsic matrix and distortion coefficients.
+
+No replacement projection matrix is provided, so the result contains
+normalized, undistorted coordinates.
+
+Conceptually:
+
+```text
+x = (u - cx) / fx
+y = (v - cy) / fy
+```
+
+after accounting for lens distortion.
+
+Because the points are already normalized, essential-matrix estimation and
+pose recovery use the identity camera matrix. The camera intrinsic matrix is
+not applied a second time.
+
+## Essential-matrix estimation
+
+The essential matrix is estimated from normalized correspondences using:
+
+```python
+cv2.findEssentialMat(
+    normalized_reference_points,
+    normalized_current_points,
+    cameraMatrix=np.eye(3, dtype=np.float64),
+    method=cv2.RANSAC,
+    prob=ransac_probability,
+    threshold=ransac_threshold,
+)
+```
+
+A conservative minimum of eight correspondences is required by default.
+
+The Milestone 2 fundamental matrix is never reused as the essential matrix.
+
+If OpenCV returns vertically stacked essential-matrix candidates, each `3x3`
+candidate is evaluated with pose recovery. The valid candidate with the largest
+cheirality-inlier count is selected. Ties are resolved deterministically by
+choosing the earliest candidate.
+
+## Relative-pose convention
+
+The recovered pose follows:
+
+```text
+X_current =
+    R_current_reference @ X_reference
+    + t_current_reference
+```
+
+where:
+
+- `X_reference` is a 3D point in the reference-camera frame
+- `X_current` is the point in the current-camera frame
+- `R_current_reference` is the recovered `3x3` rotation matrix
+- `t_current_reference` is the unit translation direction
+
+The implementation validates:
+
+- Rotation shape
+- Rotation finiteness
+- Rotation orthonormality
+- Rotation determinant near `+1`
+- Translation-vector shape
+- Translation-vector finiteness
+- Translation norm near `1`
+
+Rotation angle is computed from the clipped matrix trace.
+
+## Translation scale
+
+Monocular two-view geometry cannot recover absolute metric translation scale.
+
+The translation output is therefore:
+
+```text
+A unit direction vector
+```
+
+It is not:
+
+```text
+A translation measured in meters
+```
+
+A translation norm of `1.0` only confirms normalization. It does not prove that
+the translation direction is physically accurate or well constrained.
+
+Every terminal result and JSON report explicitly states that translation scale
+is unknown.
+
+## Cheirality and pose-quality gating
+
+`cv2.recoverPose` performs a positive-depth cheirality check. A supported
+triangulated point must lie in front of both cameras.
+
+The implementation reports:
+
+- Calibrated input correspondences
+- Essential-matrix inliers
+- Cheirality inliers
+- Essential-inlier ratio
+- Cheirality-inlier ratio
+
+The reported `cheirality_inlier_ratio` is defined as:
+
+```text
+cheirality_inlier_count
+/
+calibrated_input_correspondence_count
+```
+
+It is not the ratio of cheirality inliers to essential-matrix inliers.
+
+For example, the `100 → 105` pair reports:
+
+```text
+43 / 160 = 0.26875
+```
+
+A relative pose is marked valid for downstream motion use only when both
+quality thresholds pass:
+
+```text
+cheirality_inlier_count >= 30
+cheirality_inlier_ratio >= 0.15
+```
+
+These are initial project-level engineering safeguards, not universal
+pose-validity guarantees.
+
+A mathematically returned pose that fails the thresholds remains available for
+diagnostics, but:
+
+```text
+pose_quality_valid = False
+```
+
+and `pose_quality_reason` explains which threshold failed.
+
+## Why a configurable frame gap is required
+
+At 20 Hz, consecutive frames are separated by approximately 50 ms.
+
+A small gap often provides:
+
+- Strong image overlap
+- Many feature correspondences
+- Very little translational parallax
+- Poorly constrained translation direction
+
+Increasing the gap can improve translation observability by creating a larger
+camera baseline.
+
+However, a larger gap can also cause:
+
+- Greater viewpoint change
+- Lower image overlap
+- Fewer persistent features
+- Increased descriptor variation
+- More motion blur
+- Unfavorable two-view geometry
+
+Correspondence counts generally decrease as viewpoint and appearance changes
+become larger, but the relationship is not guaranteed to be monotonic. Local
+texture, motion direction, image overlap, and feature-detection variability
+also affect the results.
+
+No single fixed frame gap is assumed to work everywhere.
+
+## Running relative-pose estimation
+
+Default consecutive-frame execution:
+
+```powershell
+python scripts/estimate_relative_pose.py `
+    --sequence "$HOME\Desktop\datasets\euroc\MH_01_easy" `
+    --frame-index 0 `
+    --output "outputs\pose_000000.json"
+```
+
+Execution with a five-frame gap:
+
+```powershell
+python scripts/estimate_relative_pose.py `
+    --sequence "$HOME\Desktop\datasets\euroc\MH_01_easy" `
+    --frame-index 100 `
+    --frame-gap 5 `
+    --output "outputs\pose_000100_gap005.json"
+```
+
+Available options include:
+
+```text
+--frame-gap
+--min-cheirality-count
+--min-cheirality-ratio
+--max-features
+--ratio-threshold
+--ransac-threshold
+--ransac-confidence
+--essential-probability
+--essential-threshold
+--min-correspondences
+```
+
+Default quality-gate values:
+
+```text
+Minimum cheirality count: 30
+Minimum cheirality ratio: 0.15
+```
+
+## JSON report
+
+Each successful JSON report includes:
+
+### Frame metadata
+
+- Sequence path
+- Calibration-file path
+- Reference frame index
+- Current frame index
+- Frame gap
+- Reference timestamp
+- Current timestamp
+- Timestamp difference
+
+### Calibration
+
+- Camera model
+- Distortion model
+- Resolution
+- Camera rate
+- `fx`, `fy`, `cx`, and `cy`
+- Camera matrix
+- Distortion coefficients
+- Body-to-sensor transform
+
+### Correspondence diagnostics
+
+- Reference keypoint count
+- Current keypoint count
+- Ratio-filtered match count
+- Milestone 2 geometric-inlier count
+- Calibrated input-correspondence count
+- Essential-matrix inlier count
+- Cheirality-inlier count
+- Essential-inlier ratio
+- Cheirality-inlier ratio
+
+### Pose-quality information
+
+- Minimum cheirality count
+- Minimum cheirality ratio
+- Pose-quality validity
+- Pose-quality reason
+
+### Pose output
+
+- Essential matrix
+- Relative rotation matrix
+- Rotation determinant
+- Unit translation direction
+- Translation norm
+- Rotation angle
+- Transform convention
+- Translation-scale status
+
+All JSON values are finite and standards compliant.
+
+# Measured Milestone 3 experiments
+
+Experiments were run at reference frames `0`, `100`, and `1000` with multiple
+frame gaps.
+
+Quality thresholds:
+
+```text
+Minimum cheirality count: 30
+Minimum cheirality ratio: 0.15
+```
+
+| Reference | Gap | Current | Ratio-filtered | Calibrated input | Essential inliers | Cheirality | Cheirality ratio | Rotation | Quality |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| 0 | 1 | 1 | 704 | 499 | 337 | 24 | 0.0481 | 0.161839° | Rejected |
+| 0 | 2 | 2 | 573 | 381 | 265 | 22 | 0.0577 | 0.773289° | Rejected |
+| 0 | 5 | 5 | 345 | 241 | 177 | 27 | 0.1120 | 2.545557° | Rejected |
+| 0 | 10 | 10 | 174 | 131 | 83 | 83 | 0.6336 | 2.990605° | Accepted |
+| 100 | 1 | 101 | 660 | 442 | 291 | 2 | 0.0045 | 1.071188° | Rejected |
+| 100 | 2 | 102 | 475 | 322 | 217 | 1 | 0.0031 | 1.772359° | Rejected |
+| 100 | 5 | 105 | 264 | 160 | 106 | 43 | 0.2687 | 2.685171° | Accepted |
+| 100 | 10 | 110 | 488 | 350 | 239 | 0 | 0.0000 | Not recovered | Failed |
+| 1000 | 1 | 1001 | 662 | 486 | 330 | 7 | 0.0144 | 1.600239° | Rejected |
+| 1000 | 2 | 1002 | 598 | 411 | 266 | 22 | 0.0535 | 2.526919° | Rejected |
+| 1000 | 5 | 1005 | 345 | 212 | 134 | 134 | 0.6321 | 5.381084° | Accepted |
+| 1000 | 10 | 1010 | 202 | 124 | 86 | 85 | 0.6855 | 8.563743° | Accepted |
+
+All successful pose recoveries produced:
+
+```text
+Rotation determinant: approximately 1.0
+Translation norm: approximately 1.0
+Translation scale: unknown
+```
+
+## Findings
+
+### Small gaps
+
+All tested gap-1 and gap-2 pairs failed the quality gate.
+
+Although these pairs retained many feature correspondences and essential-matrix
+inliers, only 1 to 24 correspondences passed cheirality.
+
+This indicates that strong feature overlap does not guarantee sufficiently
+observable translation.
+
+### Moderate gaps
+
+A gap of five frames produced accepted poses at references 100 and 1000:
+
+```text
+100 → 105:
+43 cheirality inliers
+0.2687 cheirality-to-input ratio
+
+1000 → 1005:
+134 cheirality inliers
+0.6321 cheirality-to-input ratio
+```
+
+The `0 → 5` pair remained below the thresholds, showing that gap 5 is not
+universally sufficient.
+
+### Larger gaps
+
+Gap 10 produced accepted poses for:
+
+```text
+0 → 10
+1000 → 1010
+```
+
+The `100 → 110` pair was correctly rejected. This pair retained 350 calibrated
+correspondences and 239 essential-matrix inliers, but no correspondence passed
+the positive-depth cheirality check.
+
+The script therefore returned a nonzero exit status rather than emitting an
+unsupported relative pose.
+
+Possible causes include:
+
+- Insufficient or unfavorable translational parallax
+- Dominant rotational motion
+- Scene geometry
+- Correspondence ambiguity
+- An essential-matrix decomposition inconsistent with positive depth
+
+Ground-truth motion analysis is required before attributing the failure to a
+specific vehicle-motion pattern.
+
+## Conclusion from the frame-gap experiment
+
+There is no single best fixed frame gap for every part of the sequence.
+
+The results demonstrate a tradeoff:
+
+```text
+Gap too small
+    ↓
+Many matches but weak parallax
+    ↓
+Translation poorly constrained
+
+Moderate gap
+    ↓
+Enough overlap and enough parallax
+    ↓
+Supported relative pose
+
+Gap too large or locally unfavorable
+    ↓
+Reduced overlap or degenerate geometry
+    ↓
+Pose recovery may fail
+```
+
+Future multi-frame processing should use pose-quality or parallax-driven frame
+selection instead of assuming a globally fixed frame gap.
+
+These selected pairs are diagnostic examples, not a complete sequence
+benchmark.
+
+# Testing and code quality
+
+Run all automated tests:
 
 ```powershell
 python -m pytest -q
@@ -513,7 +997,7 @@ python -m pytest -q
 Current validated result:
 
 ```text
-50 passed
+106 passed
 ```
 
 Run Ruff:
@@ -528,116 +1012,150 @@ Current validated result:
 All checks passed!
 ```
 
-The automated tests use synthetic images and synthetic EuRoC-style directories
-created under pytest's temporary directory.
+Automated tests use:
 
-Automated tests do not:
+- Synthetic images
+- Synthetic EuRoC-style directories
+- Synthetic calibration files
+- Deterministic synthetic 3D point clouds
+- Known camera rotations and translations
+- Controlled noise and outliers
 
-- Depend on the real EuRoC sequence
+The tests do not:
+
+- Depend on the real EuRoC dataset
 - Modify the real dataset
 - Write generated files into the dataset
-- Assume exact ORB keypoint counts when OpenCV-version-dependent behavior could
-  vary
+- Depend on exact OpenCV RANSAC inlier counts
+- Assume exact ORB keypoint counts
 
-Tests use invariant-based assertions for descriptor dimensions, match-index
-bounds, inlier counts, visualization dimensions, file creation, input
-immutability, and error handling.
+Tests validate:
 
-## Assumptions and limitations
+- Calibration parsing and precision
+- Intrinsic-matrix construction
+- Distortion-array construction
+- Calibration-to-image resolution matching
+- Correspondence extraction
+- Point undistortion
+- Essential-matrix estimation
+- Candidate splitting and selection
+- Relative-pose recovery
+- Rotation orthonormality
+- Rotation determinant
+- Translation normalization
+- Cheirality processing
+- Pose-quality evaluation
+- JSON serialization
+- Structured failure handling
+- Input immutability
 
-### Image input
+# Assumptions and limitations
 
-ORB extraction currently requires:
+## Calibration assumptions
 
-- A nonempty NumPy array
-- Two-dimensional grayscale input
-- `uint8` pixel values
+The current loader supports:
 
-Color images, empty arrays, and unsupported data types are rejected with
-informative errors.
+```text
+camera_model: pinhole
+distortion_model: radial-tangential
+```
 
-### Temporal matching only
+Expected intrinsics:
 
-Milestone 2 matches consecutive images from `cam0`.
+```text
+[fx, fy, cx, cy]
+```
 
-The implementation does not yet use:
+Expected distortion coefficients:
 
-- `cam1` for stereo feature matching
+```text
+[k1, k2, p1, p2]
+```
+
+Images must be:
+
+- Nonempty
+- Two-dimensional
+- Grayscale
+- `uint8`
+- Resolution-compatible with the calibration
+
+## Structured failures
+
+Relative-pose estimation returns a structured failure instead of fabricating
+matrices when:
+
+- Too few calibrated correspondences exist
+- Coordinate arrays are malformed
+- Coordinates contain nonfinite values
+- Correspondences have insufficient spatial spread
+- Essential-matrix estimation fails
+- Essential matrices are malformed
+- Returned masks are inconsistent
+- All pose candidates fail validation
+- No points pass cheirality
+
+## Geometric degeneracies
+
+Two-view monocular geometry can become unreliable under:
+
+- Pure or nearly pure rotation
+- Very small translation
+- Distant scene structure
+- Insufficient parallax
+- Planar or nearly planar scenes
+- Collinear feature configurations
+- Low texture
+- Repetitive patterns
+- Motion blur
+- Dynamic objects
+- Calibration inaccuracies
+- Remaining correspondence outliers
+
+## Current scope limitations
+
+Milestone 3 does not implement:
+
+- Metric translation-scale recovery
+- Multi-frame trajectory accumulation
+- Visual odometry
 - Stereo triangulation
 - Stereo depth
-- IMU measurements
-- Ground-truth pose
-
-### Lens distortion
-
-Fundamental-matrix RANSAC currently operates on feature coordinates from the
-original camera images.
-
-Milestone 2 does not yet:
-
-- Load `sensor.yaml`
-- Apply camera intrinsics
-- Undistort keypoint coordinates
-- Compensate for radial-tangential lens distortion
-
-These capabilities belong to Milestone 3.
-
-### Geometric degeneracy
-
-Feature matching and fundamental-matrix estimation may degrade under:
-
-- Pure or nearly pure camera rotation
-- Very small motion between frames
-- Motion blur
-- Low-texture surfaces
-- Repetitive visual patterns
-- Strong lighting variation
-- Dynamic objects
-- Residual lens distortion
-
-A high RANSAC inlier count indicates epipolar consistency. It does not by
-itself prove that the estimated geometry is physically correct or sufficient
-for stable pose recovery.
-
-### No pose estimation yet
-
-Milestone 2 does not implement:
-
-- Essential-matrix estimation
-- Relative camera rotation
-- Relative translation direction
-- Translation magnitude
-- Metric scale
-- Trajectory accumulation
-- Visual odometry
-- SLAM
+- Keyframe selection
 - Bundle adjustment
 - Loop closure
+- IMU preintegration
+- Visual-inertial fusion
+- SLAM
+- ROS 2
+- PX4
+- Gazebo
+- Occupancy mapping
+- Path planning
+- Drone control
 
-## Planned Milestone 3
+# Planned Milestone 4
 
-Milestone 3 will build relative camera pose estimation on top of the verified
-Milestone 2 correspondences.
+Milestone 4 will extend the two-view pipeline toward quality-gated visual
+odometry and trajectory evaluation.
 
 Planned work:
 
-1. Parse the EuRoC `cam0/sensor.yaml` calibration file.
-2. Validate the camera model, resolution, distortion coefficients, and
-   projection parameters.
-3. Build the camera intrinsic matrix.
-4. Undistort matched feature coordinates.
-5. Estimate the essential matrix using calibrated correspondences.
-6. Recover relative camera rotation and translation direction.
-7. Check cheirality and valid triangulation conditions.
-8. Compare selected relative-pose estimates with EuRoC ground truth where
-   coordinate-frame alignment permits meaningful evaluation.
-9. Add synthetic and real-data tests.
-10. Document failure cases and limitations.
+1. Parse and interpolate EuRoC ground-truth poses.
+2. Evaluate estimated relative rotation against ground truth.
+3. Evaluate translation direction against ground truth.
+4. Introduce quality-gated frame or keyframe selection.
+5. Accumulate accepted relative rotations.
+6. Address translation-scale ambiguity explicitly.
+7. Compare trajectory segments with ground truth.
+8. Measure relative pose error and trajectory drift.
+9. Reject unsupported pose updates from accumulation.
+10. Document failure cases across longer sequence segments.
 
-A complete trajectory, metric scale, visual-inertial fusion, and SLAM remain
-outside the initial Milestone 3 scope.
+Metric scale, stereo odometry, and IMU fusion must be designed carefully before
+claiming a complete metric trajectory.
 
-## Long-term roadmap
+# Long-term roadmap
 
 ```text
 Milestone 1
@@ -650,7 +1168,7 @@ Milestone 3
 Calibrated relative pose estimation
         ↓
 Milestone 4
-Trajectory accumulation and evaluation
+Trajectory accumulation and ground-truth evaluation
         ↓
 Milestone 5
 Stereo-inertial SLAM integration
@@ -673,11 +1191,4 @@ Closed-loop autonomous drone navigation
 
 ## License
 
-The original AeroNav-VIO source code in this repository is licensed under the
-Apache License 2.0. See [LICENSE](LICENSE) for the complete terms.
-
-Third-party libraries, datasets, and future SLAM components remain subject to
-their own licenses. The EuRoC dataset is not distributed in this repository.
-
-Future ORB-SLAM3 integration will remain externally managed and will be
-reviewed separately because ORB-SLAM3 is distributed under GPLv3.
+A project license will be added in a separate repository update.
