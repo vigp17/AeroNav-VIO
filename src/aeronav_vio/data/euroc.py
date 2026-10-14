@@ -135,6 +135,14 @@ class EurocSequence:
         """Cam1 timestamps with no matching cam0 record."""
         return self._unmatched_cam1_timestamps
 
+    def load_left_image(self, index: int) -> np.ndarray:
+        """Load the cam0 left image for a synchronized frame index as grayscale."""
+        if index < 0 or index >= len(self._frames):
+            raise IndexError(
+                f"Frame index {index} out of range for {len(self._frames)} pairs"
+            )
+        return _read_grayscale_image(self._frames[index].left_image_path)
+
     def load_stereo_pair(self, index: int) -> tuple[np.ndarray, np.ndarray]:
         """Load a selected stereo pair as original-size grayscale arrays."""
         if index < 0 or index >= len(self._frames):

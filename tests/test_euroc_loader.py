@@ -176,7 +176,9 @@ def test_load_stereo_pair_preserves_dimensions(sequence_root: Path) -> None:
     _write_image(sequence_root, "cam0", "left.png", np.full((3, 5, 3), 31, np.uint8))
     _write_image(sequence_root, "cam1", "right.png", np.full((7, 2, 3), 167, np.uint8))
 
-    left, right = EurocSequence(sequence_root).load_stereo_pair(0)
+    seq = EurocSequence(sequence_root)
+    left_only = seq.load_left_image(0)
+    left, right = seq.load_stereo_pair(0)
 
     assert isinstance(left, np.ndarray)
     assert isinstance(right, np.ndarray)
@@ -184,6 +186,7 @@ def test_load_stereo_pair_preserves_dimensions(sequence_root: Path) -> None:
     assert right.shape == (7, 2)
     assert left.dtype == np.uint8
     assert right.dtype == np.uint8
+    np.testing.assert_array_equal(left_only, np.full((3, 5), 31, np.uint8))
     np.testing.assert_array_equal(left, np.full((3, 5), 31, np.uint8))
     np.testing.assert_array_equal(right, np.full((7, 2), 167, np.uint8))
 
