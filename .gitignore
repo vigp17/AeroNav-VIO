@@ -8,6 +8,7 @@ Thumbs.db
 
 datasets/
 data/
+!src/aeronav_vio/data/
 
 outputs/*
 !outputs/.gitkeep
